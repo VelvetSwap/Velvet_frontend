@@ -120,18 +120,13 @@ export function buildRemainingAccounts(
 }
 
 /**
- * Format validity proof for Anchor (Option<CompressedProof> as { 0: proof })
+ * Format validity proof for Anchor (Option<CompressedProof>)
+ * Returns null for None variant when using proveByIndex=true
  */
-function formatValidityProof(compressedProof: any) {
-    if (!compressedProof) {
-        // Return empty proof if none provided
-        return {
-            0: {
-                a: new Array(32).fill(0),
-                b: new Array(64).fill(0),
-                c: new Array(32).fill(0),
-            }
-        };
+function formatValidityProof(compressedProof: any, proveByIndex: boolean = false) {
+    // When using proveByIndex=true (V2 batched trees), proof should be None
+    if (proveByIndex || !compressedProof) {
+        return null; // None variant for Option<CompressedProof>
     }
     return {
         0: {
@@ -389,13 +384,13 @@ export async function swapExactIn(params: {
         outputStateTreeIndex: stateQueueIndex,
     };
 
-    // For V2 batched trees with proveByIndex=true, empty proof is acceptable
-    const validityProof = formatValidityProof(compressedProof);
+    // For V2 batched trees with proveByIndex=true, proof should be None (null)
+    const validityProof = formatValidityProof(compressedProof, true);
     console.log('Pool meta:', {
         proveByIndex: true,
         leafIndex: poolState.leafIndex,
         rootIndex,
-        hasProof: !!compressedProof,
+        proof: validityProof === null ? 'None' : 'Some',
     });
 
     const ix = await program.methods
