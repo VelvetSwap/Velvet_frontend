@@ -325,24 +325,30 @@ export async function swapExactIn(params: {
     let rootIndex = 0;
     let compressedProof = null;
     
+    // Convert hash to BN254 format required by getValidityProofV0
+    // The hash from getCompressedAccountsByOwner is a byte array, convert to BN
+    const hashBn = bn(poolState.accountHash);
+    
+    console.log('Fetching validity proof for hash:', hashBn.toString().slice(0, 20) + '...');
+    
     try {
         // For state transitions on existing compressed accounts, we need getValidityProofV0
-        // with the account hash as input
+        // with the account hash as input (must be BN254 format)
         const proofResult = await lightRpc.getValidityProofV0(
-            [{ hash: poolState.accountHash, tree: stateTree, queue: stateQueue }],
+            [{ hash: hashBn, tree: stateTree, queue: stateQueue }],
             [] // no new addresses
         );
         
         if (proofResult) {
             rootIndex = proofResult.rootIndices?.[0] || 0;
             compressedProof = proofResult.compressedProof;
-            console.log('Got validity proof, rootIndex:', rootIndex);
+            console.log('Got validity proof, rootIndex:', rootIndex, 'hasProof:', !!compressedProof);
         }
     } catch (proofError: any) {
         console.warn('Failed to get validity proof:', proofError?.message);
         // Fallback: try getMultipleCompressedAccountProofs
         try {
-            const proofs = await lightRpc.getMultipleCompressedAccountProofs([poolState.accountHash]);
+            const proofs = await lightRpc.getMultipleCompressedAccountProofs([hashBn]);
             if (proofs && proofs[0]) {
                 rootIndex = proofs[0].rootIndex || 0;
                 console.log('Got merkle proof fallback, rootIndex:', rootIndex);
