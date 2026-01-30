@@ -126,6 +126,7 @@ function PrivateSwapInterface() {
     const [complianceChecking, setComplianceChecking] = useState(false);
     const [balances, setBalances] = useState<{ tokenA: string | null; tokenB: string | null }>({ tokenA: null, tokenB: null });
     const [balanceLoading, setBalanceLoading] = useState(false);
+    const [userAccounts, setUserAccounts] = useState<{ tokenA: PublicKey | null; tokenB: PublicKey | null }>({ tokenA: null, tokenB: null });
 
     // Check pool status on mount
     useEffect(() => {
@@ -161,13 +162,21 @@ function PrivateSwapInterface() {
         checkCompliance();
     }, [publicKey]);
 
-    // Fetch Inco token balances
+    // Fetch Inco token balances - check if accounts exist
     useEffect(() => {
         const fetchBalances = async () => {
             if (!publicKey || !connection) {
                 setBalances({ tokenA: null, tokenB: null });
+                setUserAccounts({ tokenA: null, tokenB: null });
                 return;
             }
+            
+            // If we already have accounts from swap, just verify they exist
+            if (userAccounts.tokenA && userAccounts.tokenB) {
+                setBalances({ tokenA: '✓ Active', tokenB: '✓ Active' });
+                return;
+            }
+            
             setBalanceLoading(true);
             try {
                 const { findUserIncoAccounts } = await import('@/lib/inco-account-manager');
@@ -175,10 +184,9 @@ function PrivateSwapInterface() {
                 const accounts = await findUserIncoAccounts(connection, publicKey);
                 console.log('Found accounts:', accounts);
                 
-                // Since balances are FHE-encrypted, we show account status
+                setUserAccounts(accounts);
                 const balA = accounts.tokenA ? '✓ Active' : 'No account';
                 const balB = accounts.tokenB ? '✓ Active' : 'No account';
-                
                 setBalances({ tokenA: balA, tokenB: balB });
             } catch (e) {
                 console.warn('Failed to fetch balances:', e);
@@ -188,7 +196,7 @@ function PrivateSwapInterface() {
             }
         };
         fetchBalances();
-    }, [publicKey, connection, txSignature]);
+    }, [publicKey, connection]);
 
 
     // Swap tokens
@@ -267,6 +275,10 @@ function PrivateSwapInterface() {
                 { publicKey, signTransaction },
                 (msg) => setStatusMessage(msg)
             );
+
+            // Store account addresses for balance display
+            setUserAccounts({ tokenA: userTokenA, tokenB: userTokenB });
+            setBalances({ tokenA: '✓ Active', tokenB: '✓ Active' });
 
             if (created) {
                 setStatusMessage('Token accounts created! Preparing swap...');
