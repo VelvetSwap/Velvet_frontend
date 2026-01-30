@@ -1,8 +1,8 @@
-# VelvetRope Architecture
+# VelvetSwap Architecture
 
 ## Overview
 
-VelvetRope is a privacy-first confidential swap terminal for Solana, combining:
+VelvetSwap is a privacy-first confidential swap terminal for Solana, combining:
 
 - **[Velvet Swap](https://github.com/your-username/velvet-swap)** — Confidential AMM with encrypted reserves
 - **Inco Lightning** — Encrypted math + Confidential SPL token balances
@@ -17,7 +17,7 @@ flowchart TB
         WALLET[Wallet Adapter]
     end
 
-    subgraph Frontend["VelvetRope Frontend"]
+    subgraph Frontend["VelvetSwap Frontend"]
         MAIN[Main UI<br/>page.tsx]
     end
 
@@ -63,7 +63,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant User
-    participant UI as VelvetRope UI
+    participant UI as VelvetSwap UI
     participant Wallet
     participant VS as Velvet Swap
     participant Inco as Inco Lightning

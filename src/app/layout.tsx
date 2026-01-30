@@ -6,8 +6,8 @@ import { AppWalletProvider } from "../components/providers/WalletProvider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-    title: "VelvetRope | Private Lane for Solana",
-    description: "Anti-MEV & Compliant Privacy Portal",
+    title: "VelvetSwap | Confidential Swaps on Solana",
+    description: "Encrypted swaps powered by Inco Lightning + MagicBlock PER",
 };
 
 export default function RootLayout({
