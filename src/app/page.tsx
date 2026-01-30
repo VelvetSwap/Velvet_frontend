@@ -410,15 +410,13 @@ function PrivateSwapInterface() {
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="flex-1 min-w-0 text-3xl font-semibold">
-                        {privacyMode && estimatedOutput ? (
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                                <EyeOff className="w-5 h-5" />
-                                <span className="tracking-wider">••••••</span>
+                        {estimatedOutput ? (
+                            <span className="flex items-center gap-2">
+                                <span className="text-emerald-400">~{estimatedOutput}</span>
+                                {privacyMode && <EyeOff className="w-4 h-4 text-muted-foreground" />}
                             </span>
                         ) : (
-                            <span className={estimatedOutput ? 'text-foreground' : 'text-muted-foreground/30'}>
-                                {estimatedOutput || '0.0'}
-                            </span>
+                            <span className="text-muted-foreground/30">0.0</span>
                         )}
                     </div>
                     <button className="flex-shrink-0 flex items-center gap-2 bg-secondary hover:bg-secondary/80 px-4 py-2.5 rounded-xl font-medium transition-colors">
