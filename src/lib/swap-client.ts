@@ -334,10 +334,22 @@ export async function swapExactIn(params: {
     try {
         // For state transitions on existing compressed accounts, we need getValidityProofV0
         // with the account hash as input (must be BN254 format)
+        console.log('Calling getValidityProofV0 with:', {
+            hash: hashBn.toString().slice(0, 30) + '...',
+            tree: stateTree.toBase58(),
+            queue: stateQueue.toBase58(),
+        });
+        
         const proofResult = await lightRpc.getValidityProofV0(
             [{ hash: hashBn, tree: stateTree, queue: stateQueue }],
             [] // no new addresses
         );
+        
+        console.log('getValidityProofV0 result:', {
+            hasCompressedProof: !!proofResult?.compressedProof,
+            rootIndices: proofResult?.rootIndices,
+            roots: proofResult?.roots?.length,
+        });
         
         if (proofResult) {
             rootIndex = proofResult.rootIndices?.[0] || 0;
@@ -345,17 +357,9 @@ export async function swapExactIn(params: {
             console.log('Got validity proof, rootIndex:', rootIndex, 'hasProof:', !!compressedProof);
         }
     } catch (proofError: any) {
-        console.warn('Failed to get validity proof:', proofError?.message);
-        // Fallback: try getMultipleCompressedAccountProofs
-        try {
-            const proofs = await lightRpc.getMultipleCompressedAccountProofs([hashBn]);
-            if (proofs && proofs[0]) {
-                rootIndex = proofs[0].rootIndex || 0;
-                console.log('Got merkle proof fallback, rootIndex:', rootIndex);
-            }
-        } catch (e) {
-            console.warn('Fallback proof also failed');
-        }
+        console.error('Failed to get validity proof:', proofError?.message, proofError);
+        // Don't fallback - we need a real validity proof for state transitions
+        throw new Error(`Cannot get validity proof: ${proofError?.message}`);
     }
 
     // Build remaining accounts using the ACTUAL trees from the pool
