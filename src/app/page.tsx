@@ -111,6 +111,7 @@ function PrivateSwapInterface() {
     const [perConnection, setPerConnection] = useState<Connection | null>(null);
     const [privacyMode, setPrivacyMode] = useState(true);
     const [poolStatus, setPoolStatus] = useState<'checking' | 'ready' | 'not_found'>('checking');
+    const [demoMode, setDemoMode] = useState(true); // Demo mode for hackathon presentation
 
     // Check pool status on mount
     useEffect(() => {

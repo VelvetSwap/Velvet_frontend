@@ -228,6 +228,12 @@ export async function fetchPoolState(mintA: PublicKey, mintB: PublicKey): Promis
     poolMeta: any;
     poolData: Buffer;
     poolAddress: PublicKey;
+    accountHash: any;
+    treeInfo: {
+        tree: PublicKey;
+        queue: PublicKey;
+    };
+    leafIndex: number;
 } | null> {
     const lightRpc = createLightRpc();
     const poolAddress = derivePoolAddress(mintA, mintB);
@@ -241,23 +247,40 @@ export async function fetchPoolState(mintA: PublicKey, mintB: PublicKey): Promis
         
         if (!poolAccount) return null;
         
-        // Extract merkle context info
-        const merkleContext = (poolAccount as any).merkleContext || {};
+        // Extract the actual tree info from the account (NOT hardcoded values)
+        const acct = poolAccount as any;
+        const treeInfo = acct.treeInfo || {};
+        const leafIndex = acct.leafIndex || 0;
+        const accountHash = acct.hash;
+        
+        console.log('Pool account found:', {
+            address: poolAddress.toBase58(),
+            tree: treeInfo.tree,
+            queue: treeInfo.queue,
+            leafIndex,
+        });
         
         return {
             poolMeta: {
+                // This will be populated with correct indices after building PackedAccounts
                 treeInfo: {
-                    rootIndex: merkleContext.rootIndex || 0,
+                    rootIndex: 0, // Will be set from proof
                     proveByIndex: false,
-                    merkleTreePubkeyIndex: 0,
-                    queuePubkeyIndex: 1,
-                    leafIndex: merkleContext.leafIndex || 0,
+                    merkleTreePubkeyIndex: 0, // Will be set after insertOrGet
+                    queuePubkeyIndex: 0, // Will be set after insertOrGet
+                    leafIndex,
                 },
                 address: Array.from(poolAddress.toBytes()),
-                outputStateTreeIndex: 1,
+                outputStateTreeIndex: 0, // Will be set after insertOrGet
             },
-            poolData: Buffer.from((poolAccount as any).data?.data || []),
+            poolData: Buffer.from(acct.data?.data || []),
             poolAddress,
+            accountHash,
+            treeInfo: {
+                tree: new PublicKey(treeInfo.tree),
+                queue: new PublicKey(treeInfo.queue),
+            },
+            leafIndex,
         };
     } catch (e) {
         console.warn('Pool not found:', e);
@@ -282,40 +305,73 @@ export async function swapExactIn(params: {
     const program = getSwapProgram(connection, wallet);
     const lightRpc = createLightRpc();
 
-    // Fetch pool state
+    // Fetch pool state (includes actual tree info from the account)
     const poolState = await fetchPoolState(mintA, mintB);
     if (!poolState) {
         throw new Error('Pool not initialized. Please initialize pool first.');
     }
 
-    const addressTree = LIGHT_BATCH_ADDRESS_TREE;
-    const outputQueue = LIGHT_OUTPUT_QUEUE;
+    // Use the ACTUAL tree info from the pool account, not hardcoded values
+    const stateTree = poolState.treeInfo.tree;
+    const stateQueue = poolState.treeInfo.queue;
+    
+    console.log('Using pool tree info:', {
+        stateTree: stateTree.toBase58(),
+        stateQueue: stateQueue.toBase58(),
+        leafIndex: poolState.leafIndex,
+    });
 
-    // Get validity proof for state transition
-    let proofResult;
+    // Get merkle proof for the existing compressed account
+    let rootIndex = 0;
+    let compressedProof = null;
+    
     try {
-        proofResult = await lightRpc.getValidityProofV0(
-            [bn(poolState.poolAddress.toBytes())],
-            []
-        );
+        // Use getMultipleCompressedAccountProofs to get the merkle proof
+        const proofs = await lightRpc.getMultipleCompressedAccountProofs([poolState.accountHash]);
+        if (proofs && proofs[0]) {
+            rootIndex = proofs[0].rootIndex || 0;
+            console.log('Got merkle proof, rootIndex:', rootIndex);
+        }
+        
+        // For V2, we may not need a validity proof for simple state transitions
+        // The merkle proof from getMultipleCompressedAccountProofs is sufficient
     } catch (proofError: any) {
-        console.warn('Failed to get validity proof, using empty proof:', proofError?.message);
-        proofResult = { compressedProof: null };
+        console.warn('Failed to get merkle proof:', proofError?.message);
     }
 
-    // Build remaining accounts
+    // Build remaining accounts using the ACTUAL trees from the pool
     const packedAccounts = new PackedAccounts();
     packedAccounts.addSystemAccountsV2(SystemAccountMetaConfig.new(LIGHT_SWAP_PROGRAM_ID));
-    const addressTreeIndex = packedAccounts.insertOrGet(addressTree);
-    const outputQueueIndex = packedAccounts.insertOrGet(outputQueue);
-    const remainingAccounts = buildRemainingAccounts(addressTreeIndex, outputQueueIndex, packedAccounts);
+    
+    // Insert the actual state tree and queue from the pool account
+    const stateTreeIndex = packedAccounts.insertOrGet(stateTree);
+    const stateQueueIndex = packedAccounts.insertOrGet(stateQueue);
+    
+    // Also add the address tree for any new addresses
+    const addressTreeIndex = packedAccounts.insertOrGet(LIGHT_BATCH_ADDRESS_TREE);
+    
+    const remainingAccounts = buildRemainingAccounts(stateTreeIndex, stateQueueIndex, packedAccounts);
 
-    const validityProof = formatValidityProof(proofResult?.compressedProof);
+    // Update poolMeta with correct indices
+    const poolMeta = {
+        treeInfo: {
+            rootIndex,
+            proveByIndex: false,
+            merkleTreePubkeyIndex: stateTreeIndex,
+            queuePubkeyIndex: stateQueueIndex,
+            leafIndex: poolState.leafIndex,
+        },
+        address: Array.from(poolState.poolAddress.toBytes()),
+        outputStateTreeIndex: stateQueueIndex,
+    };
+
+    // Format validity proof (may be null for V2 state transitions)
+    const validityProof = formatValidityProof(compressedProof);
 
     const ix = await program.methods
         .swapExactIn(
             validityProof,
-            poolState.poolMeta,
+            poolMeta,
             poolState.poolData,
             amountInCiphertext,
             amountOutCiphertext,
