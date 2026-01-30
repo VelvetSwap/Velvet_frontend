@@ -73,246 +73,6 @@
       ]
     },
     {
-      "name": "create_permission",
-      "discriminator": [
-        190,
-        182,
-        26,
-        164,
-        156,
-        221,
-        8,
-        0
-      ],
-      "accounts": [
-        {
-          "name": "permissioned_account"
-        },
-        {
-          "name": "permission",
-          "writable": true
-        },
-        {
-          "name": "payer",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "permission_program",
-          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "account_type",
-          "type": {
-            "defined": {
-              "name": "AccountType"
-            }
-          }
-        },
-        {
-          "name": "members",
-          "type": {
-            "option": {
-              "vec": {
-                "defined": {
-                  "name": "Member"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "delegate_pda",
-      "docs": [
-        "Delegate pool authority PDA to the MagicBlock validator for PER execution."
-      ],
-      "discriminator": [
-        248,
-        217,
-        193,
-        46,
-        124,
-        191,
-        64,
-        135
-      ],
-      "accounts": [
-        {
-          "name": "buffer_pda",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  117,
-                  102,
-                  102,
-                  101,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pda"
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                53,
-                81,
-                139,
-                198,
-                180,
-                140,
-                167,
-                196,
-                62,
-                0,
-                77,
-                191,
-                53,
-                200,
-                237,
-                74,
-                74,
-                237,
-                254,
-                112,
-                1,
-                227,
-                7,
-                205,
-                247,
-                15,
-                162,
-                171,
-                20,
-                246,
-                205,
-                124
-              ]
-            }
-          }
-        },
-        {
-          "name": "delegation_record_pda",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pda"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegation_program"
-            }
-          }
-        },
-        {
-          "name": "delegation_metadata_pda",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  108,
-                  101,
-                  103,
-                  97,
-                  116,
-                  105,
-                  111,
-                  110,
-                  45,
-                  109,
-                  101,
-                  116,
-                  97,
-                  100,
-                  97,
-                  116,
-                  97
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pda"
-              }
-            ],
-            "program": {
-              "kind": "account",
-              "path": "delegation_program"
-            }
-          }
-        },
-        {
-          "name": "pda",
-          "writable": true
-        },
-        {
-          "name": "payer",
-          "signer": true
-        },
-        {
-          "name": "validator",
-          "optional": true
-        },
-        {
-          "name": "owner_program",
-          "address": "4b8jCufu7b4WKXdxFRQHWSks4QdskW62qF7tApSNXuZD"
-        },
-        {
-          "name": "delegation_program",
-          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "account_type",
-          "type": {
-            "defined": {
-              "name": "AccountType"
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "initialize_pool",
       "discriminator": [
         95,
@@ -372,43 +132,6 @@
         {
           "name": "fee_bps",
           "type": "u16"
-        }
-      ]
-    },
-    {
-      "name": "process_undelegation",
-      "discriminator": [
-        196,
-        28,
-        41,
-        206,
-        48,
-        37,
-        51,
-        167
-      ],
-      "accounts": [
-        {
-          "name": "base_account",
-          "writable": true
-        },
-        {
-          "name": "buffer"
-        },
-        {
-          "name": "payer",
-          "writable": true
-        },
-        {
-          "name": "system_program"
-        }
-      ],
-      "args": [
-        {
-          "name": "account_seeds",
-          "type": {
-            "vec": "bytes"
-          }
         }
       ]
     },
@@ -481,7 +204,7 @@
       "name": "swap_exact_in",
       "docs": [
         "Execute a private swap with encrypted amounts",
-        "Token transfers are handled separately via compressed token program"
+        "Includes CPI to Inco Token for actual token transfers"
       ],
       "discriminator": [
         104,
@@ -500,8 +223,40 @@
           "signer": true
         },
         {
+          "name": "pool_authority",
+          "docs": ["Pool authority PDA for signing token transfers"]
+        },
+        {
+          "name": "user_token_a",
+          "writable": true,
+          "docs": ["User's Inco token account for token A"]
+        },
+        {
+          "name": "user_token_b",
+          "writable": true,
+          "docs": ["User's Inco token account for token B"]
+        },
+        {
+          "name": "pool_vault_a",
+          "writable": true,
+          "docs": ["Pool vault for token A (owned by pool_authority)"]
+        },
+        {
+          "name": "pool_vault_b",
+          "writable": true,
+          "docs": ["Pool vault for token B (owned by pool_authority)"]
+        },
+        {
           "name": "inco_lightning_program",
           "address": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj"
+        },
+        {
+          "name": "inco_token_program",
+          "address": "CYVSeUyVzHGVcrxsJt3E8tbaPCQT8ASdRR45g5WxUEW7"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -566,37 +321,11 @@
     },
     {
       "code": 6003,
-      "name": "InvalidPermissionAccount",
-      "msg": "Invalid permissioned account"
-    },
-    {
-      "code": 6004,
       "name": "Unauthorized",
       "msg": "Unauthorized - only pool authority can perform this action"
     }
   ],
   "types": [
-    {
-      "name": "AccountType",
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "PoolAuthority",
-            "fields": [
-              {
-                "name": "mint_a",
-                "type": "pubkey"
-              },
-              {
-                "name": "mint_b",
-                "type": "pubkey"
-              }
-            ]
-          }
-        ]
-      }
-    },
     {
       "name": "CompressedAccountMeta",
       "type": {
@@ -669,22 +398,6 @@
                 32
               ]
             }
-          }
-        ]
-      }
-    },
-    {
-      "name": "Member",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "flags",
-            "type": "u8"
-          },
-          {
-            "name": "pubkey",
-            "type": "pubkey"
           }
         ]
       }
