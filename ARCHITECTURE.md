@@ -7,6 +7,16 @@ VelvetSwap is a privacy-first confidential swap terminal for Solana, combining:
 - **Inco Lightning (FHE)** — Pool reserves encrypted, swap math on ciphertext
 - **Light Protocol V2 (ZK)** — Pool state stored as ZK-compressed account
 
+## Privacy Layer Status (Verified)
+
+Verified via `private_swap_programs/scripts/verify-privacy-layers.ts`:
+
+| Layer | Status | Test Result |
+|-------|--------|-------------|
+| **Light Protocol (ZK)** | ✅ Working | Pool at `1QJcNYRBuDKQnWQofUQNwFg9MRoqgoLAUhW5js2ApS2`, leafIndex 290427 |
+| **Inco Lightning (FHE)** | ✅ Working | Program deployed, pool data: 203 bytes FHE ciphertexts |
+| **MagicBlock TEE** | ❌ Incompatible | `Cloner error: Failed to clone program SySTEM1eSU2p4BGQfQpimFEWWSC1XDFeun3Nqzz3rT7` |
+
 ## Privacy Model
 
 | Layer | What's Protected | How |
@@ -14,7 +24,7 @@ VelvetSwap is a privacy-first confidential swap terminal for Solana, combining:
 | **FHE (Inco Lightning)** | Pool reserves, accumulated fees | Stored as `Euint128`, math via CPI |
 | **ZK (Light Protocol)** | Pool state transitions | Compressed accounts with validity proofs |
 
-> **Note:** MagicBlock TEE is not used for swaps due to incompatibility with Light Protocol infrastructure. PER permissions are set up for future integration when Light Protocol supports TEE execution.
+> **TEE Limitation:** MagicBlock PER creates an isolated ephemeral environment that cannot clone Light Protocol programs from devnet mainstate. Swaps execute on devnet directly via Helius RPC with FHE + ZK privacy.
 
 ## System Architecture
 
