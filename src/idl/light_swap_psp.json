@@ -224,27 +224,68 @@
         },
         {
           "name": "pool_authority",
-          "docs": ["Pool authority PDA for signing token transfers"]
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user_token_a.mint",
+                "account": "IncoAccount"
+              },
+              {
+                "kind": "account",
+                "path": "user_token_b.mint",
+                "account": "IncoAccount"
+              }
+            ]
+          }
         },
         {
           "name": "user_token_a",
-          "writable": true,
-          "docs": ["User's Inco token account for token A"]
+          "docs": [
+            "User's Inco token account for token A"
+          ],
+          "writable": true
         },
         {
           "name": "user_token_b",
-          "writable": true,
-          "docs": ["User's Inco token account for token B"]
+          "docs": [
+            "User's Inco token account for token B"
+          ],
+          "writable": true
         },
         {
           "name": "pool_vault_a",
-          "writable": true,
-          "docs": ["Pool vault for token A (owned by pool_authority)"]
+          "docs": [
+            "Pool vault for token A (owned by pool_authority)"
+          ],
+          "writable": true
         },
         {
           "name": "pool_vault_b",
-          "writable": true,
-          "docs": ["Pool vault for token B (owned by pool_authority)"]
+          "docs": [
+            "Pool vault for token B (owned by pool_authority)"
+          ],
+          "writable": true
         },
         {
           "name": "inco_lightning_program",
@@ -303,6 +344,21 @@
       ]
     }
   ],
+  "accounts": [
+    {
+      "name": "IncoAccount",
+      "discriminator": [
+        18,
+        233,
+        131,
+        18,
+        230,
+        173,
+        249,
+        89
+      ]
+    }
+  ],
   "errors": [
     {
       "code": 6000,
@@ -326,6 +382,51 @@
     }
   ],
   "types": [
+    {
+      "name": "AccountState",
+      "repr": {
+        "kind": "rust"
+      },
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Uninitialized"
+          },
+          {
+            "name": "Initialized"
+          },
+          {
+            "name": "Frozen"
+          }
+        ]
+      }
+    },
+    {
+      "name": "COption",
+      "generics": [
+        {
+          "kind": "type",
+          "name": "T"
+        }
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "None"
+          },
+          {
+            "name": "Some",
+            "fields": [
+              {
+                "generic": "T"
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       "name": "CompressedAccountMeta",
       "type": {
@@ -397,6 +498,97 @@
                 "u8",
                 32
               ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Euint128",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          "u128"
+        ]
+      }
+    },
+    {
+      "name": "IncoAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": {
+              "defined": {
+                "name": "Euint128"
+              }
+            }
+          },
+          {
+            "name": "delegate",
+            "type": {
+              "defined": {
+                "name": "COption",
+                "generics": [
+                  {
+                    "kind": "type",
+                    "type": "pubkey"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "state",
+            "type": {
+              "defined": {
+                "name": "AccountState"
+              }
+            }
+          },
+          {
+            "name": "is_native",
+            "type": {
+              "defined": {
+                "name": "COption",
+                "generics": [
+                  {
+                    "kind": "type",
+                    "type": "u64"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "delegated_amount",
+            "type": {
+              "defined": {
+                "name": "Euint128"
+              }
+            }
+          },
+          {
+            "name": "close_authority",
+            "type": {
+              "defined": {
+                "name": "COption",
+                "generics": [
+                  {
+                    "kind": "type",
+                    "type": "pubkey"
+                  }
+                ]
+              }
             }
           }
         ]
