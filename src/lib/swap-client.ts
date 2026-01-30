@@ -376,10 +376,11 @@ export async function swapExactIn(params: {
     const remainingAccounts = buildRemainingAccounts(stateTreeIndex, stateQueueIndex, packedAccounts);
 
     // Update poolMeta with correct indices
+    // V2 batched trees use proveByIndex=true optimization (no ZK proof needed)
     const poolMeta = {
         treeInfo: {
             rootIndex,
-            proveByIndex: false,
+            proveByIndex: true, // V2 batched trees verify by index, not merkle proof
             merkleTreePubkeyIndex: stateTreeIndex,
             queuePubkeyIndex: stateQueueIndex,
             leafIndex: poolState.leafIndex,
@@ -388,18 +389,13 @@ export async function swapExactIn(params: {
         outputStateTreeIndex: stateQueueIndex,
     };
 
-    // Format validity proof - REQUIRED for state transitions
-    if (!compressedProof) {
-        console.error('No validity proof returned from Light RPC - cannot proceed with swap');
-        console.error('This usually means the pool state is stale or the hash is incorrect');
-        throw new Error('Failed to get validity proof for swap. Please try again.');
-    }
-    
+    // For V2 batched trees with proveByIndex=true, empty proof is acceptable
     const validityProof = formatValidityProof(compressedProof);
-    console.log('Validity proof formatted:', {
-        hasA: validityProof[0].a.some((x: number) => x !== 0),
-        hasB: validityProof[0].b.some((x: number) => x !== 0),
-        hasC: validityProof[0].c.some((x: number) => x !== 0),
+    console.log('Pool meta:', {
+        proveByIndex: true,
+        leafIndex: poolState.leafIndex,
+        rootIndex,
+        hasProof: !!compressedProof,
     });
 
     const ix = await program.methods
