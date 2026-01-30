@@ -17,7 +17,16 @@ import {
     encryptAmount,
     computeSwapQuote,
     fetchPoolState,
+    DEVNET_INCO_MINT_A,
+    DEVNET_INCO_MINT_B,
+    DEVNET_POOL_VAULT_A,
+    DEVNET_POOL_VAULT_B,
 } from '@/lib/swap-client';
+import {
+    ensureUserIncoAccounts,
+    INCO_MINT_A,
+    INCO_MINT_B,
+} from '@/lib/inco-account-manager';
 
 const WalletMultiButton = dynamic(
     () => import('@solana/wallet-adapter-react-ui').then(mod => mod.WalletMultiButton),
@@ -166,7 +175,7 @@ function PrivateSwapInterface() {
         return signature;
     };
 
-    // Private swap flow: TEE Auth -> Swap on PER
+    // Private swap flow with Inco Token transfers
     const handlePrivateSwap = async () => {
         if (!publicKey || !signMessage || !signTransaction) {
             setStatusMessage('Please connect your wallet');
@@ -181,15 +190,27 @@ function PrivateSwapInterface() {
         const inputAmount = Math.floor(parseFloat(amount) * Math.pow(10, fromToken.decimals));
 
         try {
-            // Step 1: Prepare encrypted amounts
-            // Using input_type=0: plaintext sent to program, encrypted on-chain via Inco Lightning
+            // Step 1: Ensure user has Inco Token accounts
             setStep('authenticating');
-            setStatusMessage('Preparing confidential swap...');
+            setStatusMessage('Setting up confidential token accounts...');
+            
+            const { tokenA: userTokenA, tokenB: userTokenB, created } = await ensureUserIncoAccounts(
+                connection,
+                { publicKey, signTransaction },
+                (msg) => setStatusMessage(msg)
+            );
+
+            if (created) {
+                setStatusMessage('Token accounts created! Preparing swap...');
+            }
+
+            // Step 2: Compute swap quote
+            setStatusMessage('Computing confidential swap quote...');
             
             const { amountOut, feeAmount } = computeSwapQuote(
                 BigInt(inputAmount),
-                BigInt(1_000_000_000), // Reserve - in production fetch from pool
-                BigInt(150_000_000_000),
+                BigInt(1_000_000_000_000), // Reserve A - in production fetch from pool
+                BigInt(100_000_000_000),   // Reserve B
                 30n // 0.3% fee
             );
             
@@ -198,30 +219,30 @@ function PrivateSwapInterface() {
             const amountOutCiphertext = encryptAmount(amountOut);
             const feeAmountCiphertext = encryptAmount(feeAmount);
 
-            // Step 2: Execute swap on devnet via Light Protocol
-            // Privacy provided by:
-            // - Inco Lightning: FHE encryption of pool reserves and swap amounts
-            // - Light Protocol: ZK compressed accounts for pool state
-            // Note: TEE execution incompatible with Light Protocol (different infrastructure)
+            // Step 3: Execute swap with Inco Token transfers
             setStep('swapping');
-            setStatusMessage('Executing confidential swap...');
+            setStatusMessage('Executing confidential swap with token transfers...');
 
             const swapTx = await swapExactIn({
-                connection, // Use devnet - Light Protocol requires devnet infrastructure
+                connection,
                 wallet: { publicKey, signTransaction },
-                mintA: DEVNET_WSOL_MINT,
-                mintB: DEVNET_TEST_USDC_MINT,
+                mintA: DEVNET_INCO_MINT_A,
+                mintB: DEVNET_INCO_MINT_B,
                 amountInCiphertext,
                 amountOutCiphertext,
                 feeAmountCiphertext,
                 aToB: fromToken.symbol === 'SOL',
+                userTokenA,
+                userTokenB,
+                poolVaultA: DEVNET_POOL_VAULT_A,
+                poolVaultB: DEVNET_POOL_VAULT_B,
             });
             
             const sig = await signAndSend(swapTx, connection);
             setTxSignature(sig);
 
             setStep('complete');
-            setStatusMessage('Private swap completed!');
+            setStatusMessage('Private swap completed! Tokens transferred.');
         } catch (e: any) {
             console.error('Private swap failed:', e);
             setStep('error');
