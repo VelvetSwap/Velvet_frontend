@@ -181,17 +181,9 @@ function PrivateSwapInterface() {
         const inputAmount = Math.floor(parseFloat(amount) * Math.pow(10, fromToken.decimals));
 
         try {
-            // Step 1: Authenticate with TEE
+            // Step 1: Prepare encrypted amounts (FHE layer)
             setStep('authenticating');
-            setStatusMessage('Authenticating with MagicBlock TEE...');
-            
-            const auth = await getAuthToken(TEE_RPC_URL, publicKey, signMessage);
-            const perConn = new Connection(`${TEE_RPC_URL}?token=${auth.token}`, 'confirmed');
-            setPerConnection(perConn);
-
-            // Step 2: Execute swap on PER via light_swap_psp program
-            setStep('swapping');
-            setStatusMessage('Executing private swap inside TEE...');
+            setStatusMessage('Encrypting swap amounts with FHE...');
             
             // Encrypt amounts for confidential swap
             const amountInCiphertext = encryptAmount(BigInt(inputAmount));
@@ -204,9 +196,14 @@ function PrivateSwapInterface() {
             const amountOutCiphertext = encryptAmount(amountOut);
             const feeAmountCiphertext = encryptAmount(feeAmount);
 
-            // Execute swap via light_swap_psp program
+            // Step 2: Execute swap via light_swap_psp program on devnet
+            // Note: For full privacy, this would go through MagicBlock TEE
+            // For now, execute directly on devnet to test Light Protocol integration
+            setStep('swapping');
+            setStatusMessage('Executing confidential swap on devnet...');
+
             const swapTx = await swapExactIn({
-                connection: perConn,
+                connection,  // Use regular devnet connection for now
                 wallet: { publicKey, signTransaction },
                 mintA: DEVNET_WSOL_MINT,
                 mintB: DEVNET_TEST_USDC_MINT,
@@ -216,7 +213,7 @@ function PrivateSwapInterface() {
                 aToB: fromToken.symbol === 'SOL',
             });
             
-            const sig = await signAndSend(swapTx, perConn);
+            const sig = await signAndSend(swapTx, connection);
             setTxSignature(sig);
 
             setStep('complete');
