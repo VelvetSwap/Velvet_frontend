@@ -384,8 +384,19 @@ export async function swapExactIn(params: {
         outputStateTreeIndex: stateQueueIndex,
     };
 
-    // Format validity proof (may be null for V2 state transitions)
+    // Format validity proof - REQUIRED for state transitions
+    if (!compressedProof) {
+        console.error('No validity proof returned from Light RPC - cannot proceed with swap');
+        console.error('This usually means the pool state is stale or the hash is incorrect');
+        throw new Error('Failed to get validity proof for swap. Please try again.');
+    }
+    
     const validityProof = formatValidityProof(compressedProof);
+    console.log('Validity proof formatted:', {
+        hasA: validityProof[0].a.some((x: number) => x !== 0),
+        hasB: validityProof[0].b.some((x: number) => x !== 0),
+        hasC: validityProof[0].c.some((x: number) => x !== 0),
+    });
 
     const ix = await program.methods
         .swapExactIn(
