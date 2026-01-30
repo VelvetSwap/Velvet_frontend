@@ -29,6 +29,9 @@ export const LIGHT_SWAP_PROGRAM_ID = new PublicKey('4b8jCufu7b4WKXdxFRQHWSks4Qds
 // Inco Lightning Program
 export const INCO_LIGHTNING_PROGRAM_ID = new PublicKey('5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj');
 
+// Inco Token Program (for confidential token transfers)
+export const INCO_TOKEN_PROGRAM_ID = new PublicKey('CYVSeUyVzHGVcrxsJt3E8tbaPCQT8ASdRR45g5WxUEW7');
+
 // Light Protocol V2 batch address tree
 export const LIGHT_BATCH_ADDRESS_TREE = new PublicKey(batchAddressTree);
 
@@ -285,7 +288,7 @@ export async function fetchPoolState(mintA: PublicKey, mintB: PublicKey): Promis
 }
 
 /**
- * Execute a swap with Light Protocol V2
+ * Execute a swap with Light Protocol V2 and Inco Token transfers
  */
 export async function swapExactIn(params: {
     connection: Connection;
@@ -296,8 +299,16 @@ export async function swapExactIn(params: {
     amountOutCiphertext: Buffer;
     feeAmountCiphertext: Buffer;
     aToB: boolean;
+    // Inco Token accounts for actual token transfers
+    userTokenA: PublicKey;
+    userTokenB: PublicKey;
+    poolVaultA: PublicKey;
+    poolVaultB: PublicKey;
 }): Promise<Transaction> {
-    const { connection, wallet, mintA, mintB, amountInCiphertext, amountOutCiphertext, feeAmountCiphertext, aToB } = params;
+    const { connection, wallet, mintA, mintB, amountInCiphertext, amountOutCiphertext, feeAmountCiphertext, aToB, userTokenA, userTokenB, poolVaultA, poolVaultB } = params;
+    
+    // Derive pool authority PDA
+    const poolAuthorityPda = derivePoolAuthorityPda(mintA, mintB);
     const program = getSwapProgram(connection, wallet);
     const lightRpc = createLightRpc();
 
@@ -407,7 +418,13 @@ export async function swapExactIn(params: {
         )
         .accounts({
             feePayer: wallet.publicKey,
+            poolAuthority: poolAuthorityPda,
+            userTokenA: userTokenA,
+            userTokenB: userTokenB,
+            poolVaultA: poolVaultA,
+            poolVaultB: poolVaultB,
             incoLightningProgram: INCO_LIGHTNING_PROGRAM_ID,
+            incoTokenProgram: INCO_TOKEN_PROGRAM_ID,
         })
         .remainingAccounts(remainingAccounts)
         .instruction();
