@@ -263,7 +263,7 @@ function PrivateSwapInterface() {
             </div>
 
             {/* From Token */}
-            <div className="token-input">
+            <div className="token-input overflow-hidden">
                 <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
                     <span>You Pay</span>
                     <span className="text-xs">Balance: --</span>
@@ -274,10 +274,10 @@ function PrivateSwapInterface() {
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
                         placeholder="0.0"
-                        className="flex-1 bg-transparent text-3xl font-semibold outline-none placeholder:text-muted-foreground/30"
+                        className="flex-1 min-w-0 bg-transparent text-3xl font-semibold outline-none placeholder:text-muted-foreground/30"
                         disabled={isProcessing}
                     />
-                    <button className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 px-4 py-2.5 rounded-xl font-medium transition-colors">
+                    <button className="flex-shrink-0 flex items-center gap-2 bg-secondary hover:bg-secondary/80 px-4 py-2.5 rounded-xl font-medium transition-colors">
                         <span className="text-lg">{fromToken.icon}</span>
                         <span>{fromToken.symbol}</span>
                     </button>
@@ -296,13 +296,13 @@ function PrivateSwapInterface() {
             </div>
 
             {/* To Token */}
-            <div className="token-input">
+            <div className="token-input overflow-hidden">
                 <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
                     <span>You Receive</span>
                     <span className="text-xs">Balance: --</span>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="flex-1 text-3xl font-semibold">
+                    <div className="flex-1 min-w-0 text-3xl font-semibold">
                         {privacyMode && estimatedOutput ? (
                             <span className="flex items-center gap-2 text-muted-foreground">
                                 <EyeOff className="w-5 h-5" />
@@ -314,7 +314,7 @@ function PrivateSwapInterface() {
                             </span>
                         )}
                     </div>
-                    <button className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 px-4 py-2.5 rounded-xl font-medium transition-colors">
+                    <button className="flex-shrink-0 flex items-center gap-2 bg-secondary hover:bg-secondary/80 px-4 py-2.5 rounded-xl font-medium transition-colors">
                         <span className="text-lg">{toToken.icon}</span>
                         <span>{toToken.symbol}</span>
                     </button>
