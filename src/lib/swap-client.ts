@@ -5,7 +5,9 @@
  */
 
 import { AnchorProvider, BN, Program, type Idl } from '@coral-xyz/anchor';
-import { Connection, PublicKey, Transaction, ComputeBudgetProgram } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, VersionedTransaction, TransactionMessage, ComputeBudgetProgram, AddressLookupTableAccount } from '@solana/web3.js';
+import { encryptValue } from '@inco/solana-sdk/encryption';
+import { hexToBuffer } from '@inco/solana-sdk/utils';
 import {
     createRpc,
     bn,
@@ -51,8 +53,28 @@ export const DEVNET_POOL_AUTHORITY = new PublicKey(devnetConfig.poolAuthorityPda
 
 export interface WalletAdapter {
     publicKey: PublicKey;
-    signTransaction: (tx: Transaction) => Promise<Transaction>;
+    signTransaction: (tx: Transaction | VersionedTransaction) => Promise<Transaction | VersionedTransaction>;
     signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
+}
+
+// Cached lookup table
+let cachedLookupTable: AddressLookupTableAccount | null = null;
+
+/**
+ * Fetch the Address Lookup Table for V0 transactions.
+ * Uses the address from devnet-config.json.
+ */
+async function fetchLookupTable(connection: Connection): Promise<AddressLookupTableAccount | null> {
+    if (cachedLookupTable) return cachedLookupTable;
+    const lookupTableAddress = (devnetConfig as any).lookupTable;
+    if (!lookupTableAddress) return null;
+    try {
+        const result = await connection.getAddressLookupTable(new PublicKey(lookupTableAddress));
+        cachedLookupTable = result.value;
+        return cachedLookupTable;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -312,7 +334,7 @@ export async function swapExactIn(params: {
     userTokenB: PublicKey;
     poolVaultA: PublicKey;
     poolVaultB: PublicKey;
-}): Promise<Transaction> {
+}): Promise<Transaction | VersionedTransaction> {
     const { connection, wallet, mintA, mintB, amountInCiphertext, amountOutCiphertext, feeAmountCiphertext, aToB, userTokenA, userTokenB, poolVaultA, poolVaultB } = params;
     
     // Derive pool authority PDA
@@ -437,6 +459,20 @@ export async function swapExactIn(params: {
         .remainingAccounts(remainingAccounts)
         .instruction();
 
+    // Try V0 transaction with lookup table (needed for ECIES-sized ciphertexts)
+    const lookupTable = await fetchLookupTable(connection);
+    if (lookupTable) {
+        const allIxs = [...computeBudgetIxs(), ix];
+        const { blockhash } = await connection.getLatestBlockhash();
+        const messageV0 = new TransactionMessage({
+            payerKey: wallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: allIxs,
+        }).compileToV0Message([lookupTable]);
+        return new VersionedTransaction(messageV0);
+    }
+
+    // Fallback to legacy transaction (if no lookup table configured)
     const tx = new Transaction();
     tx.add(...computeBudgetIxs());
     tx.add(ix);
@@ -508,29 +544,18 @@ export async function addLiquidity(params: {
 }
 
 /**
- * Encrypt an amount for Inco Lightning
+ * Encrypt an amount using Inco SDK ECIES encryption.
  * 
- * With input_type=0 (plaintext), the on-chain program encrypts via CPI to Inco Lightning.
- * The amount is passed as plaintext bytes, and new_euint128() encrypts it on-chain.
+ * The on-chain program calls new_euint128(ciphertext, input_type) via CPI.
+ * ECIES encryption is REQUIRED for the covalidator to process the handles.
+ * Raw bytes create invalid handles that can never be decrypted.
  * 
- * This provides:
- * - Pool reserves stored encrypted (FHE)
- * - Swap math computed on encrypted values
- * - Only the initial tx data is plaintext (encrypted on-chain immediately)
+ * With V0 transactions + Address Lookup Table, the larger ECIES ciphertexts
+ * (~200 bytes each) fit within Solana's 1232 byte transaction limit.
  */
-export function encryptAmount(amount: bigint): Buffer {
-    // For input_type=0, we pass plaintext bytes
-    // The on-chain program encrypts via Inco Lightning CPI: new_euint128(data, input_type=0)
-    // This is the same approach used in the test files
-    const buf = Buffer.alloc(16); // u128 = 16 bytes
-    
-    // Write as little-endian u128
-    const lo = amount & BigInt('0xFFFFFFFFFFFFFFFF');
-    const hi = (amount >> 64n) & BigInt('0xFFFFFFFFFFFFFFFF');
-    buf.writeBigUInt64LE(lo, 0);
-    buf.writeBigUInt64LE(hi, 8);
-    
-    return buf;
+export async function encryptAmount(amount: bigint): Promise<Buffer> {
+    const hex = await encryptValue(amount);
+    return hexToBuffer(hex);
 }
 
 /**

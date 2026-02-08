@@ -6,5 +6,6 @@
   "poolAuthorityPda": "DSM8WDdZ5s3xkKbjtmzxpd59J42cuTZ1AJtFJTzLMkFS",
   "incoTokenProgram": "CYVSeUyVzHGVcrxsJt3E8tbaPCQT8ASdRR45g5WxUEW7",
   "incoLightningProgram": "5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj",
-  "swapProgram": "4b8jCufu7b4WKXdxFRQHWSks4QdskW62qF7tApSNXuZD"
+  "swapProgram": "4b8jCufu7b4WKXdxFRQHWSks4QdskW62qF7tApSNXuZD",
+  "lookupTable": "5oX7ZEtQnXPMTG6R3RcpxnYjG9JK1YfcNGc1qhATV6Yx"
 }

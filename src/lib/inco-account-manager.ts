@@ -140,72 +140,41 @@ export async function ensureUserIncoAccounts(
         onStatusUpdate?.(msg);
     };
 
-    status('Checking for existing Inco accounts...');
-    
-    // First, check if accounts already exist
-    let accounts = await findUserIncoAccounts(connection, wallet.publicKey);
-    
+    // Faucet is the single source of truth: creates accounts + mints + fixes corrupted ones
+    status('Setting up token accounts via faucet...');
+    try {
+        const resp = await fetch('/api/faucet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: wallet.publicKey.toBase58() }),
+        });
+        const result = await resp.json();
+        if (result.success && result.tokenA && result.tokenB) {
+            if (result.mintedA || result.mintedB) {
+                status('Accounts created & funded ✓');
+            } else {
+                status('Accounts ready ✓');
+            }
+            return {
+                tokenA: new PublicKey(result.tokenA),
+                tokenB: new PublicKey(result.tokenB),
+                created: !!(result.mintedA || result.mintedB),
+            };
+        }
+        // Faucet returned an error but didn't throw
+        status('Faucet: ' + (result.error || 'unknown error'));
+    } catch (e: any) {
+        console.warn('Faucet call failed:', e.message);
+        status('Faucet unavailable, checking local accounts...');
+    }
+
+    // Fallback: find existing accounts if faucet is unreachable
+    const accounts = await findUserIncoAccounts(connection, wallet.publicKey);
     if (accounts.tokenA && accounts.tokenB) {
-        status('Found existing Inco accounts');
-        return {
-            tokenA: accounts.tokenA,
-            tokenB: accounts.tokenB,
-            created: false,
-        };
+        return { tokenA: accounts.tokenA, tokenB: accounts.tokenB, created: false };
     }
 
-    status('Creating missing Inco accounts...');
-
-    // Create missing accounts
-    const newAccountA = accounts.tokenA ? null : Keypair.generate();
-    const newAccountB = accounts.tokenB ? null : Keypair.generate();
-
-    const txs: Transaction[] = [];
-    const signers: Keypair[] = [];
-
-    if (newAccountA) {
-        status('Creating Token A account...');
-        const tx = await createIncoAccountTx(connection, wallet, INCO_MINT_A, newAccountA);
-        txs.push(tx);
-        signers.push(newAccountA);
-    }
-
-    if (newAccountB) {
-        status('Creating Token B account...');
-        const tx = await createIncoAccountTx(connection, wallet, INCO_MINT_B, newAccountB);
-        txs.push(tx);
-        signers.push(newAccountB);
-    }
-
-    // Get recent blockhash
-    const { blockhash } = await connection.getLatestBlockhash();
-
-    // Sign and send each transaction
-    for (let i = 0; i < txs.length; i++) {
-        const tx = txs[i];
-        tx.recentBlockhash = blockhash;
-        tx.feePayer = wallet.publicKey;
-        
-        // Partial sign with keypair
-        tx.partialSign(signers[i]);
-        
-        // User signs
-        const signedTx = await wallet.signTransaction(tx);
-        
-        // Send
-        const sig = await connection.sendRawTransaction(signedTx.serialize());
-        status(`Account ${i + 1} created: ${sig.slice(0, 20)}...`);
-        
-        // Wait for confirmation
-        await connection.confirmTransaction(sig, 'confirmed');
-    }
-
-    // Return the account addresses
-    return {
-        tokenA: accounts.tokenA || newAccountA!.publicKey,
-        tokenB: accounts.tokenB || newAccountB!.publicKey,
-        created: true,
-    };
+    throw new Error('No token accounts found and faucet is unavailable. Please try again.');
 }
 
 /**

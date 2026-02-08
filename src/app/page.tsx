@@ -3,9 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Shield, ArrowDownUp, Lock, ExternalLink, CheckCircle, AlertCircle, Loader2, EyeOff, Zap, Eye } from 'lucide-react';
+import { Shield, ArrowDownUp, Lock, ExternalLink, CheckCircle, AlertCircle, Loader2, EyeOff, Zap, Eye, Wallet, KeyRound } from 'lucide-react';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 // Range Protocol compliance is handled in range-compliance.ts
 import { 
     DEVNET_WSOL_MINT,
@@ -29,6 +29,20 @@ import {
     formatComplianceStatus,
     ComplianceResult,
 } from '@/lib/range-compliance';
+import {
+    fetchUserIncoAccounts,
+    parseIncoAccountData,
+    decryptBalances,
+    formatBalance,
+    type IncoAccountInfo,
+} from '@/lib/inco-balance';
+import {
+    approvePoolAuthority,
+    getPoolAuthorityPda,
+} from '@/lib/inco-allowance';
+import {
+    ensureDecryptAccess,
+} from '@/lib/inco-access';
 
 const WalletMultiButton = dynamic(
     () => import('@solana/wallet-adapter-react-ui').then(mod => mod.WalletMultiButton),
@@ -127,6 +141,16 @@ function PrivateSwapInterface() {
     const [balances, setBalances] = useState<{ tokenA: string | null; tokenB: string | null }>({ tokenA: null, tokenB: null });
     const [balanceLoading, setBalanceLoading] = useState(false);
     const [userAccounts, setUserAccounts] = useState<{ tokenA: PublicKey | null; tokenB: PublicKey | null }>({ tokenA: null, tokenB: null });
+    
+    // Decrypted balance state
+    const [decryptedBalances, setDecryptedBalances] = useState<{ tokenA: string | null; tokenB: string | null }>({ tokenA: null, tokenB: null });
+    const [decryptLoading, setDecryptLoading] = useState(false);
+    const [incoAccounts, setIncoAccounts] = useState<{ tokenA: IncoAccountInfo | null; tokenB: IncoAccountInfo | null }>({ tokenA: null, tokenB: null });
+    
+    // Allowance state
+    const [approveLoading, setApproveLoading] = useState(false);
+    const [approveStatus, setApproveStatus] = useState<string | null>(null);
+    const [approveTx, setApproveTx] = useState<string | null>(null);
 
     // Check pool status on mount
     useEffect(() => {
@@ -224,16 +248,25 @@ function PrivateSwapInterface() {
     // Toggle privacy mode
     const togglePrivacy = () => setPrivacyMode(!privacyMode);
 
-    // Sign and send transaction
-    const signAndSend = async (tx: Transaction, conn: Connection = connection): Promise<string> => {
+    // Sign and send transaction (supports both legacy and V0 versioned transactions)
+    const signAndSend = async (tx: Transaction | VersionedTransaction, conn: Connection = connection): Promise<string> => {
         if (!signTransaction || !publicKey) throw new Error('Wallet not connected');
 
+        if (tx instanceof VersionedTransaction) {
+            // V0 transaction — already has blockhash from swap-client
+            const signed = await signTransaction(tx) as VersionedTransaction;
+            const signature = await conn.sendRawTransaction(signed.serialize());
+            await conn.confirmTransaction(signature, 'confirmed');
+            return signature;
+        }
+
+        // Legacy transaction
         tx.feePayer = publicKey;
         const { blockhash } = await conn.getLatestBlockhash();
         tx.recentBlockhash = blockhash;
 
         const signed = await signTransaction(tx);
-        const signature = await conn.sendRawTransaction(signed.serialize());
+        const signature = await conn.sendRawTransaction((signed as Transaction).serialize());
         await conn.confirmTransaction(signature, 'confirmed');
         return signature;
     };
@@ -294,10 +327,10 @@ function PrivateSwapInterface() {
                 30n // 0.3% fee
             );
             
-            // Format amounts for on-chain encryption via Inco Lightning
-            const amountInCiphertext = encryptAmount(BigInt(inputAmount));
-            const amountOutCiphertext = encryptAmount(amountOut);
-            const feeAmountCiphertext = encryptAmount(feeAmount);
+            // Encrypt amounts using Inco SDK ECIES encryption
+            const amountInCiphertext = await encryptAmount(BigInt(inputAmount));
+            const amountOutCiphertext = await encryptAmount(amountOut);
+            const feeAmountCiphertext = await encryptAmount(feeAmount);
 
             // Step 3: Execute swap with Inco Token transfers
             setStep('swapping');
@@ -337,6 +370,146 @@ function PrivateSwapInterface() {
         setTxSignature(null);
         setAmount('');
         setEstimatedOutput(null);
+    };
+
+    // Decrypt balances using Inco SDK attested reveal
+    // Automatically grants decrypt access if needed (simulate → derive PDA → execute)
+    const handleDecryptBalances = async () => {
+        if (!publicKey || !signMessage || !signTransaction || !connection) return;
+        
+        setDecryptLoading(true);
+        setDecryptedBalances({ tokenA: null, tokenB: null });
+        try {
+            // Fetch accounts with encrypted handles
+            const accounts = await fetchUserIncoAccounts(connection, publicKey);
+            setIncoAccounts(accounts);
+            
+            if (!accounts.tokenA && !accounts.tokenB) {
+                setDecryptedBalances({ tokenA: 'No account', tokenB: 'No account' });
+                return;
+            }
+
+            // Auto-grant decrypt access if needed (transparent to user)
+            // This does simulate → derive PDA → mint_to with allowance remaining_accounts
+            // Only works if connected wallet is the mint authority; otherwise falls back gracefully
+            const walletForAccess = { publicKey, signTransaction };
+            let accessA = true;
+            let accessB = true;
+            if (accounts.tokenA && accounts.tokenA.amountHandle !== '0') {
+                accessA = await ensureDecryptAccess(
+                    connection, walletForAccess,
+                    accounts.tokenA.pubkey, accounts.tokenA.mint,
+                    (msg) => console.log('[access-A]', msg)
+                );
+            }
+            if (accounts.tokenB && accounts.tokenB.amountHandle !== '0') {
+                accessB = await ensureDecryptAccess(
+                    connection, walletForAccess,
+                    accounts.tokenB.pubkey, accounts.tokenB.mint,
+                    (msg) => console.log('[access-B]', msg)
+                );
+            }
+
+            // Re-fetch handles directly with confirmed commitment
+            // (getProgramAccounts can return stale data after burn(0) changes the handle)
+            const handles: string[] = [];
+            const mapping: ('a' | 'b')[] = [];
+
+            if (accessA && accounts.tokenA && accounts.tokenA.amountHandle !== '0') {
+                const fresh = await connection.getAccountInfo(accounts.tokenA.pubkey, 'confirmed');
+                if (fresh) {
+                    const parsed = parseIncoAccountData(fresh.data as Buffer);
+                    if (parsed.amountHandle !== '0') {
+                        handles.push(parsed.amountHandle);
+                        mapping.push('a');
+                        console.log('[decrypt] Token A handle:', parsed.amountHandle);
+                    }
+                }
+            }
+            if (accessB && accounts.tokenB && accounts.tokenB.amountHandle !== '0') {
+                const fresh = await connection.getAccountInfo(accounts.tokenB.pubkey, 'confirmed');
+                if (fresh) {
+                    const parsed = parseIncoAccountData(fresh.data as Buffer);
+                    if (parsed.amountHandle !== '0') {
+                        handles.push(parsed.amountHandle);
+                        mapping.push('b');
+                        console.log('[decrypt] Token B handle:', parsed.amountHandle);
+                    }
+                }
+            }
+
+            const result: { tokenA: string | null; tokenB: string | null } = {
+                tokenA: !accounts.tokenA ? 'No account'
+                    : accounts.tokenA.amountHandle === '0' ? '0'
+                    : !accessA ? 'Access pending (run grant-balance-access script)'
+                    : null,
+                tokenB: !accounts.tokenB ? 'No account'
+                    : accounts.tokenB.amountHandle === '0' ? '0'
+                    : !accessB ? 'Access pending (run grant-balance-access script)'
+                    : null,
+            };
+
+            if (handles.length === 0) {
+                setDecryptedBalances({
+                    tokenA: result.tokenA || '0',
+                    tokenB: result.tokenB || '0',
+                });
+                return;
+            }
+
+            // Call attested decrypt - requires wallet signature
+            const plaintexts = await decryptBalances(handles, publicKey, signMessage);
+            
+            plaintexts.forEach((pt, i) => {
+                if (mapping[i] === 'a') result.tokenA = formatBalance(pt, 9);
+                if (mapping[i] === 'b') result.tokenB = formatBalance(pt, 6);
+            });
+            
+            setDecryptedBalances({
+                tokenA: result.tokenA || '0',
+                tokenB: result.tokenB || '0',
+            });
+        } catch (e: any) {
+            console.error('Decrypt failed:', e);
+            setDecryptedBalances({ tokenA: 'Error', tokenB: 'Error' });
+        } finally {
+            setDecryptLoading(false);
+        }
+    };
+
+    // Approve pool authority to spend tokens
+    const handleApprove = async (tokenType: 'a' | 'b') => {
+        if (!publicKey || !signTransaction || !connection) return;
+        
+        const account = tokenType === 'a' ? (incoAccounts.tokenA || userAccounts.tokenA) : (incoAccounts.tokenB || userAccounts.tokenB);
+        const accountPubkey = account && 'pubkey' in account ? (account as IncoAccountInfo).pubkey : account as PublicKey | null;
+        
+        if (!accountPubkey) {
+            setApproveStatus('No token account found. Create one first by initiating a swap.');
+            return;
+        }
+
+        setApproveLoading(true);
+        setApproveStatus(null);
+        setApproveTx(null);
+        try {
+            // Approve max amount (u128 max / 2 for safety)
+            const maxAmount = BigInt('170141183460469231731687303715884105727'); // ~u128 max / 2
+            const sig = await approvePoolAuthority(
+                connection,
+                { publicKey, signTransaction },
+                accountPubkey,
+                maxAmount,
+                (msg) => setApproveStatus(msg),
+            );
+            setApproveTx(sig);
+            setApproveStatus(`Approved ${tokenType === 'a' ? 'SOL' : 'USDC'} allowance!`);
+        } catch (e: any) {
+            console.error('Approve failed:', e);
+            setApproveStatus(`Approve failed: ${e.message}`);
+        } finally {
+            setApproveLoading(false);
+        }
     };
 
     const isProcessing = !['idle', 'complete', 'error'].includes(step);
@@ -523,6 +696,94 @@ function PrivateSwapInterface() {
                     <ExternalLink className="w-4 h-4" />
                     <span>View on Solana Explorer</span>
                 </a>
+            )}
+
+            {/* Balance View Section */}
+            {connected && (
+                <div className="border-t border-white/5 pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                            <Wallet className="w-4 h-4 text-primary" />
+                            <span>Confidential Balances</span>
+                        </div>
+                        <button
+                            onClick={handleDecryptBalances}
+                            disabled={decryptLoading}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 hover:bg-primary/20 text-primary transition-colors disabled:opacity-50"
+                        >
+                            {decryptLoading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                                <Eye className="w-3 h-3" />
+                            )}
+                            {decryptLoading ? 'Decrypting...' : 'View Balances'}
+                        </button>
+                    </div>
+                    
+                    {(decryptedBalances.tokenA || decryptedBalances.tokenB) && (
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-secondary/50 rounded-lg p-3">
+                                <div className="text-xs text-muted-foreground mb-1">SOL (Token A)</div>
+                                <div className="text-sm font-semibold text-emerald-400">
+                                    {decryptedBalances.tokenA || '--'}
+                                </div>
+                            </div>
+                            <div className="bg-secondary/50 rounded-lg p-3">
+                                <div className="text-xs text-muted-foreground mb-1">USDC (Token B)</div>
+                                <div className="text-sm font-semibold text-emerald-400">
+                                    {decryptedBalances.tokenB || '--'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Allowance Section */}
+            {connected && (
+                <div className="border-t border-white/5 pt-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                        <KeyRound className="w-4 h-4 text-primary" />
+                        <span>Token Allowance</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                        Approve the pool to spend your confidential tokens for swaps.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            onClick={() => handleApprove('a')}
+                            disabled={approveLoading}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-medium bg-secondary hover:bg-secondary/80 transition-colors disabled:opacity-50"
+                        >
+                            {approveLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                            Approve SOL
+                        </button>
+                        <button
+                            onClick={() => handleApprove('b')}
+                            disabled={approveLoading}
+                            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-medium bg-secondary hover:bg-secondary/80 transition-colors disabled:opacity-50"
+                        >
+                            {approveLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                            Approve USDC
+                        </button>
+                    </div>
+                    {approveStatus && (
+                        <div className="text-xs p-2 rounded-lg bg-secondary/50">
+                            <span className={approveTx ? 'text-emerald-400' : 'text-muted-foreground'}>{approveStatus}</span>
+                            {approveTx && (
+                                <a
+                                    href={`https://explorer.solana.com/tx/${approveTx}?cluster=devnet`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 mt-1 text-primary hover:text-primary/80"
+                                >
+                                    <ExternalLink className="w-3 h-3" />
+                                    View on Explorer
+                                </a>
+                            )}
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
