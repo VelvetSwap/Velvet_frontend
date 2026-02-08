@@ -8,7 +8,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import {
     prepareSwap,
@@ -149,9 +149,9 @@ export function useIncoSwap(): UseIncoSwapResult {
             });
 
             // Encrypt amounts for on-chain processing
-            const amountInCiphertext = encryptAmount(amountIn);
-            const amountOutCiphertext = encryptAmount(amountOut);
-            const feeAmountCiphertext = encryptAmount(feeAmount);
+            const amountInCiphertext = await encryptAmount(amountIn);
+            const amountOutCiphertext = await encryptAmount(amountOut);
+            const feeAmountCiphertext = await encryptAmount(feeAmount);
 
             updateStatus('confirming', 'Building transaction...');
 
@@ -176,12 +176,14 @@ export function useIncoSwap(): UseIncoSwapResult {
 
             updateStatus('signing', 'Please sign the transaction...');
 
-            // Get recent blockhash and sign
-            const { blockhash } = await connection.getLatestBlockhash();
-            tx.recentBlockhash = blockhash;
-            tx.feePayer = wallet.publicKey;
+            // Get recent blockhash for legacy transactions only
+            if (tx instanceof Transaction) {
+                const { blockhash } = await connection.getLatestBlockhash();
+                tx.recentBlockhash = blockhash;
+                tx.feePayer = wallet.publicKey;
+            }
 
-            const signedTx = await wallet.signTransaction(tx);
+            const signedTx = await wallet.signTransaction(tx as Transaction | VersionedTransaction);
 
             updateStatus('sending', 'Sending transaction...');
 
