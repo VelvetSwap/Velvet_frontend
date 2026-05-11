@@ -1,51 +1,66 @@
 # VelvetMesh Frontend Architecture
 
-> Private intent trading UI for Solana devnet.
+> Private intent trading surface for VelvetMesh on Solana devnet.
 
-## System Goal
+## Architecture Goal
 
-The frontend is the presentation layer for VelvetMesh. It turns a private trade into a visible product flow without pretending the sponsor rails are interchangeable. The user sees one experience:
+The frontend is the user-facing product layer for VelvetMesh. It should read as
+one coherent private trading experience, not as a sponsor dashboard.
 
-1. Create a private intent.
-2. Request and accept a private quote.
-3. Settle the USDC leg through MagicBlock.
-4. Shield the wSOL payout balance through Umbra.
-5. Track receipts and intent history.
+The user flow is:
 
-Arcium is the match boundary. MagicBlock and Umbra are the settlement rails. Jupiter and CoinGecko are the public market references.
+1. Connect a wallet.
+2. Create a private intent.
+3. Request or receive private quote state.
+4. Accept the verified quote.
+5. Settle privately through MagicBlock and Umbra.
+6. Review receipts in intent history.
 
-## Current Client Shape
+Arcium is the match boundary. MagicBlock is the private payment rail. Umbra is
+the shielded payout rail. Jupiter and CoinGecko are market references, not the
+core product.
+
+## Client Model
 
 ```mermaid
 graph TB
     USER["Connected wallet"]
-    PAGE["src/app/page.tsx"]
-    HISTORY["Private intent history"]
-    CHART["Market chart + quote reference"]
-    ARCIUM["Arcium private match boundary"]
+    APP["VelvetMesh Frontend"]
+    INTENT["Private intent lifecycle"]
+    HISTORY["Intent history + receipts"]
+    MATCH["Arcium private match boundary"]
     MAGIC["MagicBlock private payment route"]
     UMBRA["Umbra shielded payout route"]
-    JUPITER["Jupiter quote reference"]
-    COINGECKO["CoinGecko price history"]
+    JUP["Jupiter quote reference"]
+    CG["CoinGecko market reference"]
 
-    USER --> PAGE
-    PAGE --> CHART
-    PAGE --> HISTORY
-    PAGE --> ARCIUM
-    PAGE --> MAGIC
-    PAGE --> UMBRA
-    PAGE --> JUPITER
-    PAGE --> COINGECKO
+    USER --> APP
+    APP --> INTENT
+    APP --> HISTORY
+    INTENT --> MATCH
+    INTENT --> MAGIC
+    INTENT --> UMBRA
+    APP --> JUP
+    APP --> CG
 ```
 
-## Important Routes
+## Important App Surfaces
+
+| Surface | Role |
+|---------|------|
+| Main swap/intent panel | Create intents and drive the private flow |
+| Quote/market card | Show the live price reference and quote context |
+| Trade progress panel | Surface match, settlement, and explorer state |
+| Intent history panel | Show receipts, match status, and settlement state |
+
+## Route Map
 
 | Route | Role |
 |-------|------|
 | `/api/velvetmesh/status` | Backend health and route readiness |
 | `/api/velvetmesh/intents` | Intent history and private flow state |
 | `/api/quotes/jupiter` | Live quote reference |
-| `/api/market/coingecko` | Historical market chart data |
+| `/api/market/coingecko` | Historical chart data |
 | `/api/magicblock/private-transfer` | Private USDC settlement payloads |
 | `/api/umbra/settlement` | Umbra shielded balance actions |
 
@@ -53,8 +68,8 @@ graph TB
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Draft
-    Draft --> IntentCreated: create intent
+    [*] --> Idle
+    Idle --> IntentCreated: create intent
     IntentCreated --> QuoteReady: quote seeded or submitted
     QuoteReady --> MatchRequested: request private match
     MatchRequested --> MatchReady: Arcium result recorded
@@ -63,27 +78,33 @@ stateDiagram-v2
     Settling --> Settled: receipt stored
 ```
 
-## Key Design Rules
+## UI Rules
 
-- Keep the main CTA as the product action, not an infra action.
-- Show sponsor names only where they explain real behavior.
-- Fail closed when the devnet signer or route config is missing.
-- Store settlement plans separately from the visible amount input so refreshes do not change the execution amount.
-- Only show the two-rail settlement path for the supported `USDC -> SOL` flow.
+- Keep the main action as a product action, not an infra action.
+- Show sponsor names only where they explain a real dependency.
+- Fail closed when devnet signer or route config is missing.
+- Persist settlement plans separately from the visible amount input.
+- Only show the two-rail settlement path for the supported `USDC -> SOL`
+  intent flow.
+- Keep the market chart and quote reference visible, but secondary to the
+  private intent lifecycle.
 
 ## Operational Notes
 
 - The frontend runs on Next.js App Router.
 - The app expects devnet RPC and Umbra config in `.env.local`.
-- Receipt state is persisted locally for UX continuity and is also backed by the app routes.
-- The live chart is reference data only; execution still goes through the private settlement flow.
+- Receipt state is persisted locally for UX continuity and mirrored through the
+  app routes.
+- The live chart is reference data only; execution still goes through the
+  private settlement flow.
 
 ## Why This Shape Works
 
-The UI reads like a product because it separates three distinct concerns:
+The UI stays legible because it separates three concerns:
 
 - public market reference
 - private matching
 - private settlement receipts
 
-That keeps the product honest while still showing the full end-to-end flow the user can verify on devnet.
+That is the product story the frontend should always communicate.
+
